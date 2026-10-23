@@ -22,6 +22,26 @@ METHOD_LABELS = {"gnnexplainer": "GNNExplainer", "attention": "Attention rollout
                  "saliency": "Gradient saliency", "random": "Random (control)"}
 
 
+CKPT = os.path.join(RESULTS, "model_gat_seed{seed}.npz")
+
+
+def save_checkpoint(model, seed: int):
+    np.savez(CKPT.format(seed=seed), **model.state())
+
+
+def load_model(seed: int = 0):
+    """(model, scaler, source). Uses the saved paper-config checkpoint if present, else trains a quick demo model."""
+    path = CKPT.format(seed=seed)
+    if os.path.exists(path):
+        d = prepare(seed)                                  # deterministic: rebuilds the same scaler, no training
+        model = EdgeGNN(8, kind="gat", seed=seed)
+        z = np.load(path)
+        model.load({k: z[k] for k in z.files})
+        return model, d["scaler"], "checkpoint"
+    model, scaler = train_demo_model(seed)
+    return model, scaler, "demo"
+
+
 def train_demo_model(seed: int = 0, epochs: int = 25):
     """Quick GAT trained on the synthetic benign-period windows (~15-25 s on one CPU core)."""
     d = prepare(seed)

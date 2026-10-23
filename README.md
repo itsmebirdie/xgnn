@@ -20,6 +20,8 @@ signatures?* and *what happens to detection and explanations as traffic drifts?*
 > * The rule-based alert typer (`classify_pattern`) was revised once after a failure analysis on a separate
 >   development seed (50) that is not used in any reported result.
 > * No prior-art or patent search was done; "novelty" below means "not in the baseline plan", not a verified claim.
+  See `docs/INVENTION_DISCLOSURE.md` for the defined inventive concept, what the evidence supports, and a warning
+  about publishing before filing.
 
 ## Pipeline
 1. **Graph construction** (`graph.py`): flows -> 8 features (packets/s, dest-port count, SYN count, duration, fwd packet
@@ -82,3 +84,18 @@ Real labels map to the families dos / portscan / bruteforce / infiltration / oth
 ## Layout
 `xgnn_ids/` autograd, graph, model, explainers, drift monitor, data (synthetic + loaders) - `scripts/` experiments -
 `tests/` - `results/` JSON, logs, figures, RESULTS.md.
+
+## Streamlit UI
+```bash
+pip install -r requirements.txt
+streamlit run app/streamlit_app.py
+```
+Four tabs: **Network view** (Packet-Tracer-style topology: Internet, firewall, router, core and access switches,
+servers and PCs; links turn red under alerted flows, a selected alert's explanation is overlaid as dashed PDU
+envelopes with an event list and report), **Results dashboard** (reads `results/*.json` and figures written by `run_all.sh`), **Alert explorer**
+(generate a traffic window, pick a drift week, click an alert, choose an explainer, see the explanation graph, feature
+mask, fidelity and the generated alert report), and **Drift lab** (sliders for attacker evasion / benign shift on the
+static model). The live tabs load `results/model_gat_seed0.npz` (written by `scripts/train_model.py`, also called from `run_all.sh`); if it is missing they train a quick demo model instead.
+The UI logic lives in `xgnn_ids/app_backend.py` and is exercised by `tests/test_app_backend.py`; the Streamlit layer
+itself (`app/streamlit_app.py`) was syntax-checked but **not launched** where this repo was built (Streamlit could not
+be installed), so report any widget issues.

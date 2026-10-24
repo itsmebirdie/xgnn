@@ -75,7 +75,7 @@ python scripts/demo_alert.py                      # print human-readable alerts
 
 ## Running on the real datasets
 ```bash
-python scripts/run_real_dataset.py --dataset cicids2017 --path /data/TrafficLabelling --windows 20 --window-size 2000
+python scripts/run_real_dataset.py --dataset cicids2017 --path /data/traffic --windows 20 --window-size 2000
 python scripts/run_real_dataset.py --dataset unsw-nb15  --path /data/UNSW-NB15 --windows 20
 ```
 Real labels map to the families dos / portscan / bruteforce / infiltration / other; campaigns are approximated as
@@ -90,7 +90,9 @@ Real labels map to the families dos / portscan / bruteforce / infiltration / oth
 pip install -r requirements.txt
 streamlit run app/streamlit_app.py
 ```
-Four tabs: **Network view** (Packet-Tracer-style topology: Internet, firewall, router, core and access switches,
+Five tabs: **Real data** (load CIC-IDS2017 / UNSW-NB15 from a path or upload, train a GAT on the earliest windows,
+explain alerts on the latest; use `python scripts/make_sample_cic_csv.py` to dry-run it with a synthetic CIC-format file),
+**Network view** (Packet-Tracer-style topology: Internet, firewall, router, core and access switches,
 servers and PCs; links turn red under alerted flows, a selected alert's explanation is overlaid as dashed PDU
 envelopes with an event list and report), **Results dashboard** (reads `results/*.json` and figures written by `run_all.sh`), **Alert explorer**
 (generate a traffic window, pick a drift week, click an alert, choose an explainer, see the explanation graph, feature
@@ -99,3 +101,10 @@ static model). The live tabs load `results/model_gat_seed0.npz` (written by `scr
 The UI logic lives in `xgnn_ids/app_backend.py` and is exercised by `tests/test_app_backend.py`; the Streamlit layer
 itself (`app/streamlit_app.py`) was syntax-checked but **not launched** where this repo was built (Streamlit could not
 be installed), so report any widget issues.
+
+### Using the CIC-IDS2017 day files in the app
+Real data tab -> "Folder of day files" -> enter the TrafficLabelling folder -> **Scan folder**. The table lists each CSV
+(Monday...Friday, morning/afternoon) with its flow count, malicious share and attack labels read from the file itself.
+Tick the files to use; options: max flows per file, "centre the sample on the attacks" (otherwise the first N rows are
+often all benign) and "keep file order" (CIC timestamps have no AM/PM). Use `GeneratedLabelledFlows`/TrafficLabelling
+CSVs; `MachineLearningCSV` has no IP columns. Not yet run on the real files.

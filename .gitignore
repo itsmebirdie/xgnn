@@ -4,3 +4,4 @@ __pycache__/
 data/raw/
 *.log
 .ipynb_checkpoints/
+data/traffic/

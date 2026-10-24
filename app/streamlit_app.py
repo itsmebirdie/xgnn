@@ -22,7 +22,7 @@ def get_model(seed: int, epochs: int = 25):
     return model, scaler, source
 
 
-tab_net, tab_dash, tab_live, tab_drift = st.tabs(["🖧 Network view", "📊 Results dashboard", "🔍 Alert explorer", "🌊 Drift lab"])
+tab_net, tab_real, tab_dash, tab_live, tab_drift = st.tabs(["🖧 Network view", "🌐 Real data", "📊 Results dashboard", "🔍 Alert explorer", "🌊 Drift lab"])
 
 # ------------------------------------------------------------------ network view (Packet Tracer style)
 with tab_net:
@@ -58,6 +58,103 @@ with tab_net:
             st.caption(f"Fidelity {res['fidelity']['fidelity']:.2f} · explanation = top {res['k']} of {res['sub'].E} flows")
     else:
         st.caption(f"{len(nal)} alerts in this window; {int(ng.y.sum())} truly malicious flows.")
+
+# ------------------------------------------------------------------ real data
+with tab_real:
+    st.markdown("Load **CIC-IDS2017** (`GeneratedLabelledFlows` / TrafficLabelling CSVs, which include IP columns) or "
+                "**UNSW-NB15** raw CSVs, train a GAT on the earliest windows, then explain alerts on the latest ones. "
+                "_Loaders were tested on files that mimic these layouts; real files may need small fixes._")
+    c1, c2 = st.columns(2)
+    ds = c1.selectbox("Dataset", ["cicids2017", "unsw-nb15"], format_func={"cicids2017": "CIC-IDS2017", "unsw-nb15": "UNSW-NB15"}.get)
+    max_flows = c2.number_input("Max flows to read", 10_000, 2_000_000, 200_000, step=10_000)
+    src_mode = st.radio("Source", ["Folder of day files (TrafficLabelling)", "Single file path", "Upload CSV (<200 MB by default)"], horizontal=True)
+    path, upload, folder_sel = None, None, None
+    if src_mode.startswith("Folder"):
+        folder = st.text_input("Folder containing Monday…Friday CSVs", st.session_state.get("cic_folder", ""))
+        if st.button("Scan folder"):
+            try:
+                with st.spinner("Reading label columns…"):
+                    st.session_state["cic_scan"] = B.scan_folder(folder)
+                    st.session_state["cic_folder"] = folder
+            except Exception as ex:
+                st.session_state.pop("cic_scan", None)
+                st.error(f"Could not scan: {type(ex).__name__}: {ex}")
+        scan = st.session_state.get("cic_scan")
+        if scan is not None and len(scan):
+            st.caption("Tick the day files to use. Files load in this order (Mon → Fri). Tip: pick files whose attacks "
+                       "appear in the earliest part too, or the model never sees them in training.")
+            ed = st.data_editor(scan.assign(use=False)[["use", "file", "size_mb", "flows", "malicious_pct", "attacks"]],
+                                hide_index=True, use_container_width=True, disabled=["file", "size_mb", "flows", "malicious_pct", "attacks"])
+            chosen = list(ed.loc[ed["use"], "file"])
+            cc1, cc2, cc3 = st.columns(3)
+            per_file = cc1.number_input("Max flows per file", 5_000, 500_000, 60_000, step=5_000)
+            focus = cc2.toggle("Centre the sample on the attacks", value=True,
+                               help="Otherwise the first N rows are used, which are often all benign.")
+            keep_order = cc3.toggle("Keep file order (don't sort by timestamp)", value=True,
+                                    help="CIC timestamps have no AM/PM, so sorting can interleave morning and afternoon.")
+            folder_sel = (st.session_state["cic_folder"], chosen, int(per_file), focus, keep_order)
+    elif src_mode.startswith("Single"):
+        path = st.text_input("Path to a CSV file or a folder of CSVs", "")
+    else:
+        upload = st.file_uploader("CSV file", type=["csv"])
+    c3, c4, c5 = st.columns(3)
+    wsize = c3.number_input("Flows per window", 200, 20_000, 2000, step=200)
+    wmax = c4.number_input("Max windows", 6, 100, 24)
+    ep = c5.number_input("Training epochs", 3, 60, 15)
+    if st.button("Load data and train", type="primary"):
+        try:
+            with st.spinner("Reading flows…"):
+                if folder_sel is not None:
+                    if not folder_sel[1]:
+                        raise ValueError("Tick at least one day file first.")
+                    df = B.load_cic_selection(*folder_sel)
+                else:
+                    df = B.load_real(upload if upload is not None else path, ds, int(max_flows))
+            st.session_state["real_summary"] = B.real_summary(df)
+            with st.spinner("Building graphs and training the GAT (can take a few minutes)…"):
+                st.session_state["real"] = B.build_real_session(df, int(wsize), int(wmax), int(ep))
+        except Exception as ex:  # surface loader/column problems clearly
+            st.session_state.pop("real", None)
+            st.error(f"Could not load: {type(ex).__name__}: {ex}")
+    R = st.session_state.get("real")
+    if R:
+        sm = st.session_state["real_summary"]
+        c = st.columns(4)
+        c[0].metric("Flows read", f"{sm['flows']:,}"); c[1].metric("Hosts", f"{sm['hosts']:,}")
+        c[2].metric("Malicious", f"{sm['malicious_pct']:.1f}%"); c[3].metric("Windows", len(R["graphs"]))
+        st.caption("Attack types: " + ", ".join(f"{k}: {v:,}" for k, v in sm["types"].items()))
+        sa = R["split_attacks"]
+        st.caption(f"Malicious flows per split — train {sa['train']:,} · validation {sa['val']:,} · test {sa['test']:,}")
+        if sa["train"] == 0 or sa["test"] == 0:
+            st.warning("A split has no attacks, so the metrics below are not meaningful. Select different files, "
+                       "turn on 'Centre the sample on the attacks', or add more flows per file.")
+        tm = R["test_metrics"]
+        st.subheader("Held-out (latest) windows")
+        c = st.columns(5)
+        for col, (k, lab) in zip(c, [("accuracy", "Accuracy"), ("precision", "Precision"), ("recall", "Recall"), ("f1", "F1"), ("fpr", "False-pos. rate")]):
+            col.metric(lab, f"{tm[k]:.4f}")
+        a, b = R["split"]
+        opts = list(range(b, len(R["graphs"])))
+        wi = st.selectbox("Test window", opts, format_func=lambda i: f"window {i}  ({int(R['graphs'][i].y.sum())} malicious of {R['graphs'][i].E} flows)")
+        g = R["graphs"][wi]
+        al = B.list_alerts(R["model"], g)
+        if al.empty:
+            st.warning("No alerts in this window. Pick another one.")
+        else:
+            labels = [f"#{r.edge}  {r.src} → {r.dst}:{r.dport}  score {r.score}  [{r.truth}]" for r in al.itertuples()]
+            pick = st.selectbox("Alert to explain", labels)
+            meth = st.selectbox("Explainer  ", list(B.METHOD_LABELS), format_func=B.METHOD_LABELS.get, key="rmeth")
+            with st.spinner("Explaining…"):
+                res = B.explain_one(R["model"], g, int(al.iloc[labels.index(pick)]["edge"]), meth)
+            left, right = st.columns([3, 2])
+            with left:
+                st.pyplot(B.plot_explanation(res))
+            with right:
+                st.code(res["report"], language=None)
+                st.write(f"Fidelity {res['fidelity']['fidelity']:.3f} · top {res['k']} of {res['sub'].E} flows")
+                sp = res["sig_precision"]
+                st.write("Signature precision: " + ("n/a (benign flow / no campaign)" if sp != sp else f"{sp:.2f}"))
+            st.dataframe(B.top_flows_table(res), hide_index=True, use_container_width=True)
 
 # ------------------------------------------------------------------ dashboard
 with tab_dash:

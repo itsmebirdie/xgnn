@@ -11,11 +11,14 @@ import networkx as nx
 import numpy as np
 import pandas as pd
 
+import tempfile
+
 from .common import RESULTS, binary_metrics, prepare, scores
+from .data.loaders import load_cicids2017, load_unsw_nb15, scan_cic_folder, to_windows
 from .data.synthetic import Drift, generate_window
 from .explain import alert_report, budget, explain, fidelity, signature_precision
 from .gnn import EdgeGNN, train
-from .graph import FEATURE_LABELS, FEATURES, build_graph, computation_subgraph
+from .graph import FEATURE_LABELS, FEATURES, build_graph, computation_subgraph, fit_scaler
 
 TEAL, NAVY, ORANGE, RED = "#12a89d", "#0b2545", "#f4a261", "#e63946"
 METHOD_LABELS = {"gnnexplainer": "GNNExplainer", "attention": "Attention rollout",
@@ -128,3 +131,52 @@ def load_result(name: str):
 def figure_path(name: str):
     p = os.path.join(RESULTS, "figures", name)
     return p if os.path.exists(p) else None
+
+
+# ---------------------------------------------------------------- real datasets
+def scan_folder(path: str) -> pd.DataFrame:
+    return scan_cic_folder(path)
+
+
+def load_cic_selection(folder: str, files: list, per_file: int = 60_000, focus_attacks: bool = True,
+                       keep_file_order: bool = True) -> pd.DataFrame:
+    paths = [os.path.join(folder, f) for f in files]
+    return load_cicids2017(paths, per_file, sort_by_time=not keep_file_order, focus_attacks=focus_attacks)
+
+
+def load_real(source, dataset: str, max_flows: int | None = 200_000) -> pd.DataFrame:
+    """source: a filesystem path (file or folder) or an uploaded file-like object (has .read/.name)."""
+    loader = load_cicids2017 if dataset == "cicids2017" else load_unsw_nb15
+    if hasattr(source, "read"):
+        with tempfile.TemporaryDirectory() as d:
+            name = os.path.basename(getattr(source, "name", "upload.csv"))
+            path = os.path.join(d, name if dataset == "cicids2017" else "UNSW-NB15_upload.csv")
+            with open(path, "wb") as f:
+                f.write(source.read())
+            return loader(path, max_flows)
+    return loader(source, max_flows)
+
+
+def real_summary(df: pd.DataFrame) -> dict:
+    return {"flows": len(df), "hosts": int(pd.concat([df["src"], df["dst"]]).nunique()),
+            "malicious_pct": float(df["label"].mean() * 100),
+            "types": df["attack_type"].value_counts().to_dict()}
+
+
+def build_real_session(df: pd.DataFrame, window_size: int = 2000, max_windows: int = 30, epochs: int = 15,
+                       seed: int = 0, progress=None) -> dict:
+    """Time-ordered 70/15/15 windows, scaler fitted on train only, GAT trained quickly."""
+    wins = to_windows(df, window_size, max_windows)
+    n = len(wins)
+    if n < 6:
+        raise ValueError(f"Only {n} windows of {window_size} flows; need at least 6. Lower the window size or load more flows.")
+    a, b = int(0.70 * n), int(0.85 * n)
+    scaler = fit_scaler(wins[:a])
+    graphs = [build_graph(w, scaler) for w in wins]
+    model = EdgeGNN(8, kind="gat", seed=seed)
+    train(model, graphs[:a], graphs[a:b], epochs=epochs, lr=2e-3, seed=seed)
+    y, p = scores(model, graphs[b:])
+    atk = lambda gs: int(sum(g.y.sum() for g in gs))
+    return {"model": model, "scaler": scaler, "graphs": graphs, "wins": wins, "split": (a, b),
+            "test_metrics": binary_metrics(y, p),
+            "split_attacks": {"train": atk(graphs[:a]), "val": atk(graphs[a:b]), "test": atk(graphs[b:])}}

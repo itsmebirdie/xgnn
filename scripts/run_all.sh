@@ -6,4 +6,5 @@ python -m unittest discover -s tests -t . -v
 python scripts/run_detection.py --seeds 3
 python scripts/run_explanations.py --seeds 3 --alerts 32
 python scripts/run_drift.py --seeds 3
+python scripts/train_model.py --seed 0
 python scripts/make_figures.py

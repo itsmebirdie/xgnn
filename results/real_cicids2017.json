@@ -1,0 +1,58 @@
+{
+  "args": {
+    "dataset": "cicids2017",
+    "path": "data/traffic",
+    "windows": 20,
+    "window_size": 2000,
+    "max_flows": null,
+    "epochs": 40,
+    "alerts": 30,
+    "seed": 0
+  },
+  "detection": {
+    "accuracy": 0.5896666666666667,
+    "precision": 0.0,
+    "recall": 0.0,
+    "f1": 0.0,
+    "fpr": 0.00673778775968557,
+    "auc": 0.8270634475014038,
+    "tn": 3538,
+    "fp": 24,
+    "fn": 2438,
+    "tp": 0
+  },
+  "explanations": {
+    "gnnexplainer": {
+      "fidelity": 0.8933679190938978,
+      "sufficiency": 1.0,
+      "necessity": 0.7867358381877955,
+      "sig_precision": NaN,
+      "type_agree": NaN,
+      "sparsity": 0.8999333669549291
+    },
+    "attention": {
+      "fidelity": 0.8374294222468427,
+      "sufficiency": 1.0,
+      "necessity": 0.6748588444936855,
+      "sig_precision": NaN,
+      "type_agree": NaN,
+      "sparsity": 0.8999333669549291
+    },
+    "saliency": {
+      "fidelity": 0.8454720396204873,
+      "sufficiency": 1.0,
+      "necessity": 0.6909440792409747,
+      "sig_precision": NaN,
+      "type_agree": NaN,
+      "sparsity": 0.8999333669549291
+    },
+    "random": {
+      "fidelity": 0.2887687942839092,
+      "sufficiency": 0.5551228837358173,
+      "necessity": 0.022414704832001187,
+      "sig_precision": NaN,
+      "type_agree": NaN,
+      "sparsity": 0.8999333669549291
+    }
+  }
+}

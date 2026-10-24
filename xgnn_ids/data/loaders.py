@@ -40,7 +40,7 @@ def _campaigns(df: pd.DataFrame) -> np.ndarray:
     return camp
 
 
-def _finish(df: pd.DataFrame) -> pd.DataFrame:
+def _finish(df: pd.DataFrame, sort_by_time: bool = True) -> pd.DataFrame:
     df = df.replace([np.inf, -np.inf], np.nan).dropna(subset=["src", "dst", "time"]).copy()
     for c in ["sport", "dport", "dur", "fwd_pps", "bwd_pps", "syn", "fwd_len"]:
         df[c] = pd.to_numeric(df[c], errors="coerce").fillna(0.0)
@@ -48,17 +48,69 @@ def _finish(df: pd.DataFrame) -> pd.DataFrame:
     df["fwd_pps"] = df["fwd_pps"].clip(lower=0)
     df["bwd_pps"] = df["bwd_pps"].clip(lower=0)
     df["proto"] = pd.to_numeric(df["proto"], errors="coerce").fillna(0).astype(int)
-    df = df.sort_values("time").reset_index(drop=True)
+    df = df.sort_values("time").reset_index(drop=True) if sort_by_time else df.reset_index(drop=True)
     df["campaign"] = _campaigns(df)
     return df[RAW_COLUMNS]
 
 
-def load_cicids2017(path: str, max_flows: int | None = None) -> pd.DataFrame:
-    files = sorted(glob.glob(os.path.join(path, "*.csv"))) if os.path.isdir(path) else [path]
+CIC_NEEDED = {"source ip", "destination ip", "source port", "destination port", "protocol", "timestamp",
+              "flow duration", "fwd packets/s", "bwd packets/s", "syn flag count", "fwd packet length mean", "label"}
+DAY_ORDER = ["monday", "tuesday", "wednesday", "thursday", "friday"]
+
+
+def cic_file_order(name: str):
+    n = name.lower()
+    day = next((i for i, d in enumerate(DAY_ORDER) if n.startswith(d)), 9)
+    return (day, 1 if "afternoon" in n else 0, n)
+
+
+def _read_cic(f: str) -> pd.DataFrame:
+    d = pd.read_csv(f, encoding="latin-1", low_memory=False, usecols=lambda c: c.strip().lower() in CIC_NEEDED)
+    d.columns = [c.strip().lower() for c in d.columns]
+    missing = CIC_NEEDED - set(d.columns)
+    if missing:
+        raise ValueError(f"{os.path.basename(f)} is missing columns {sorted(missing)}. Use the 'GeneratedLabelledFlows' "
+                         f"(TrafficLabelling) CSVs, which contain IP addresses; MachineLearningCSV has none.")
+    return d
+
+
+def scan_cic_folder(path: str) -> pd.DataFrame:
+    """One row per CSV: flows, malicious share and the attack labels found (reads only the Label column)."""
+    rows = []
+    for f in sorted(glob.glob(os.path.join(path, "*.csv")), key=lambda p: cic_file_order(os.path.basename(p))):
+        lab = pd.read_csv(f, encoding="latin-1", usecols=lambda c: c.strip().lower() == "label", low_memory=False).iloc[:, 0]
+        lab = lab.astype(str).str.strip()
+        vc = lab[lab.str.lower() != "benign"].value_counts()
+        rows.append({"file": os.path.basename(f), "size_mb": round(os.path.getsize(f) / 1e6, 1), "flows": len(lab),
+                     "malicious_pct": round(100 * (len(lab) - (lab.str.lower() == "benign").sum()) / max(1, len(lab)), 2),
+                     "attacks": ", ".join(f"{k} ({v:,})" for k, v in vc.head(4).items()) or "none (benign only)"})
+    return pd.DataFrame(rows)
+
+
+def load_cicids2017(path, max_flows: int | None = None, sort_by_time: bool = True, focus_attacks: bool = False) -> pd.DataFrame:
+    """path: a CSV, a folder of CSVs, or a list of CSV paths. ``max_flows`` caps each FILE.
+
+    focus_attacks: when capping, take a contiguous block that starts just before the first malicious flow, so a day
+    file that is mostly benign still yields attacks. sort_by_time=False keeps file order (CIC timestamps carry no
+    AM/PM, so sorting by them can interleave morning and afternoon).
+    """
+    if isinstance(path, (list, tuple)):
+        files = list(path)
+    elif os.path.isdir(path):
+        files = sorted(glob.glob(os.path.join(path, "*.csv")), key=lambda p: cic_file_order(os.path.basename(p)))
+    else:
+        files = [path]
     frames = []
     for f in files:
-        d = pd.read_csv(f, encoding="latin-1", low_memory=False)
-        d.columns = [c.strip().lower() for c in d.columns]
+        d = _read_cic(f)
+        if max_flows and len(d) > max_flows:
+            start = 0
+            if focus_attacks:
+                is_atk = d["label"].astype(str).str.strip().str.lower() != "benign"
+                if is_atk.any():
+                    first = int(np.argmax(is_atk.to_numpy()))
+                    start = int(min(max(0, first - max_flows // 5), len(d) - max_flows))
+            d = d.iloc[start:start + max_flows]
         frames.append(d)
     d = pd.concat(frames, ignore_index=True)
     label = d["label"].astype(str).str.strip().str.lower()
@@ -72,9 +124,7 @@ def load_cicids2017(path: str, max_flows: int | None = None) -> pd.DataFrame:
         "label": (label != "benign").astype(int), "attack_type": atk,
         "time": pd.to_datetime(d["timestamp"], errors="coerce", dayfirst=False).astype("int64") / 1e9,
     })
-    if max_flows:
-        out = out.iloc[:max_flows]
-    return _finish(out)
+    return _finish(out, sort_by_time)
 
 
 def load_unsw_nb15(path: str, max_flows: int | None = None) -> pd.DataFrame:

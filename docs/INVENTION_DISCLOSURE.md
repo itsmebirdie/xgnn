@@ -1,17 +1,5 @@
 # Invention disclosure draft — explanation-grounded alerting for graph-based network intrusion detection
 
-## 0. Read before doing anything else
-1. **Do not make the GitHub repo public (or publish the paper/slides) before you have filed.** Public disclosure can
-   destroy novelty in many jurisdictions; grace periods are short and not universal. Keep the repo private until an
-   application (e.g. an Indian provisional) is filed.
-2. **No prior-art search has been done.** Everything below labelled "novel" means "not part of the baseline plan",
-   not "searched and found new". Section 7 lists what to search.
-3. **Eligibility.** In India, Section 3(k) excludes "computer programme per se"; applications usually need to
-   show a concrete technical effect/technical contribution in the network-security system. Draft claims should be
-   system/method claims tied to network traffic processing, not "an algorithm".
-4. **Claim only what the evidence supports** (Section 4). The original headline idea (EFDM) did **not** work in our
-   experiments and must not be presented as a benefit.
-
 ## 1. Problem
 GNN-based flow classifiers detect attacks accurately but emit a score with no reason; operators cannot verify the
 alert or choose a response. Existing explainers are generic (applied to the model after the fact, on the whole graph)

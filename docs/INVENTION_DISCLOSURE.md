@@ -91,3 +91,8 @@ to reproduce the detector's score. Weaker: fidelity attachment (step 5).
   AI for intrusion detection. CPC area to check: H04L 63/14 (network security, monitoring/detecting malicious
   traffic) and the graph-neural-network subclasses of G06N.
 * Record, for each close hit, which of steps 2, 3, 5, 6 it already teaches; narrow the claims to what remains.
+
+
+Submitted by:
+Maanas Nair
+Mohammad Abbas Abidi

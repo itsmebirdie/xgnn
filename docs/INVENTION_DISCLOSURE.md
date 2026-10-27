@@ -96,3 +96,6 @@ to reproduce the detector's score. Weaker: fidelity attachment (step 5).
 Submitted by:
 Maanas Nair 24BCT0157
 Mohammad Abbas Abidi 24BCT0229
+
+Submitted to:
+Dr. Kopperundevi

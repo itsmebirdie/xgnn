@@ -1,7 +1,5 @@
 # Invention disclosure draft — explanation-grounded alerting for graph-based network intrusion detection
 
-**Status: working draft for discussion with your university IPR cell / a patent attorney. Not legal advice.**
-
 ## 0. Read before doing anything else
 1. **Do not make the GitHub repo public (or publish the paper/slides) before you have filed.** Public disclosure can
    destroy novelty in many jurisdictions; grace periods are short and not universal. Keep the repo private until an
